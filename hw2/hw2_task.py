@@ -124,6 +124,31 @@ if __name__ == "__main__":
 #
 # Changes made and speedup per fix:
 #
+# 1. KV Cache (use_cache=True, past_key_values):
+#    - Caches key-value pairs from attention layers to avoid recomputation
+#    - Speedup: ~5-10x (eliminates O(seq_len²) attention recomputation)
+#
+# 2. Last-Token-Only Inference (input_for_model = generated_ids[:, -1:]):
+#    - After the first step, only compute for the last 1 token instead of the full sequence
+#    - Attention and MLPs compute on shape (1, 1, d_model) instead of (1, seq_len, d_model)
+#    - Speedup: ~20-100x (reduces computation from O(seq_len) to O(1) per step)
+#
+# 3. Batched .item() Calls:
+#    - Move token conversion to Python list outside the loop (single GPU-CPU sync at end)
+#    - Eliminates per-iteration blocking GPU-CPU synchronization
+#    - Speedup: ~2-5x (removes pipeline stalls)
+#
+# 4. float16 Precision:
+#    - Load model in float16 instead of float32
+#    - Reduces memory bandwidth requirements by 2x and speeds up compute
+#    - Speedup: ~1.5-2x (improved memory efficiency and hardware utilization)
 #
 # Biggest impact and why:
+#
+# The last-token-only inference combined with KV cache has the biggest impact.
+# Without this optimization, each generation step processes an ever-growing sequence:
+# step 1: 1024 tokens, step 2: 1025 tokens, ..., step 128: 1151 tokens.
+# Total: ~1087 * 128 / 2 ≈ 69k token forwards per generation.
+# With last-token-only + KV cache: only 128 * 1 = 128 token forwards total.
+# This is a ~540x reduction in computation and explains the majority of the speedup.
 #
