@@ -62,8 +62,21 @@ def benchmark_fn(fn, *args, warmup=25, rep=100) -> float:
         fn(*args)
     torch.cuda.synchronize()
 
-    # TODO: time `rep` runs using CUDA events and return median latency (ms)
-    pass
+    times = []
+    for _ in range(rep):
+        start = torch.cuda.Event(enable_timing=True)
+        end = torch.cuda.Event(enable_timing=True)
+        start.record()
+        fn(*args)
+        end.record()
+        end.synchronize()
+        times.append(start.elapsed_time(end))
+
+    times.sort()
+    mid = len(times) // 2
+    if len(times) % 2 == 1:
+        return times[mid]
+    return 0.5 * (times[mid - 1] + times[mid])
 
 
 # TASK 3: Compute element-wise operation metrics from measured runtime.
