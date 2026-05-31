@@ -12,8 +12,8 @@ import torch
 
 def lowest_ai_fn(x: torch.Tensor) -> torch.Tensor:
     """Lowest arithmetic intensity baseline (0 FLOP/Byte)."""
-    # TODO (1 line): implement a lowest-AI op
-    pass
+    # Use a plain memory copy so the operation is bounded by traffic, not compute.
+    return x.clone()
 
 
 # TASK 1b: Implement a function with configurable arithmetic intensity.
