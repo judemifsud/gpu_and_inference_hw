@@ -126,6 +126,7 @@ def compute_elementwise_metrics(num_elements, num_ops, bytes_per_element, ms, va
 # Why does performance rise as arithmetic intensity increases even though the
 # measured runtime changes only a little?
 #
+#For the compiled element-wise operations, the measured runtime remains nearly constant (around 0.377-0.378 ms) from 1 ops to 64 ops. However, the arithmetic intensity (AI) and achieved FLOP/s both increase significantly. This behavior is characteristic of memory-bound operations. When the operations are torch.compiled, they are fused into a single kernel. This means that regardless of the number of element-wise computations (num_ops), the input data is read from global memory only once, and the final output is written only once. Therefore, the total memory traffic remains constant. As you increase the number of operations (num_ops) within this fused kernel, you perform more floating-point operations (FLOPs) without increasing the memory movement. Since the runtime is primarily dictated by the constant memory access, and the FLOPs are increasing, the calculated arithmetic intensity and achieved FLOP/s naturally rise.
 # Q2. In one sample run, `matmul 1024x1024` achieved lower FLOP/s than the
 # `128 ops` compiled element-wise operation. Give one or two reasons why that can
 # happen on a large GPU like an H100.
@@ -133,5 +134,20 @@ def compute_elementwise_metrics(num_elements, num_ops, bytes_per_element, ms, va
 # Q3. Between `64 ops` and `128 ops`, runtime increases more noticeably than it
 # did for smaller operations. What does that suggest about what resource is
 # becoming the bottleneck?
+#Looking at the provided execution log for compiled operations:
 #
+#64 ops (compiled): 0.378 ms
+#128 ops (compiled): 0.378 ms
+#The runtime for the compiled operations remains constant even as the number of operations doubles. This indicates that for compiled operations, the workload is still primarily memory-bound, and the performance is limited by the rate at which data can be transferred from global memory (memory bandwidth), not by the raw compute power. The achieved FLOP/s increases because more FLOPs are being performed within the same, memory-bandwidth-limited timeframe.
+#
+#If the question were referring to the eager operations:
+#
+#64 ops (eager): 69.063 ms
+#128 ops (eager): 138.285 ms
+#Here, the runtime does increase noticeably (approximately doubling). This suggests that for eager operations, the bottleneck is consistently memory bandwidth, as each individual operation (* and +) is likely launching separate kernels, leading to repeated and increased memory traffic with each additional operation.
 # Q4. Why do the eager `ops-K` points look so different from the compiled ones?
+# The eager and compiled ops-K points look vastly different due to the presence or absence of kernel fusion:
+# 
+# Compiled (Fused) Operations: When using torch.compile, multiple elementary operations (like multiply and add in acc = acc * x + x) are fused into a single custom GPU kernel. This optimization is crucial because it significantly reduces memory traffic. The input x and the accumulator acc are read from global memory only once at the beginning of the fused kernel, and the final result is written back only once. All intermediate computations are performed entirely on-chip (using registers, L1 cache, or shared memory), avoiding costly global memory transfers. This makes the overall operation memory-bound, where performance (FLOP/s) scales with arithmetic intensity while runtime is constant (until the compute peak is hit).
+# 
+# Eager (Unfused) Operations: In eager mode, each elementary operation (* or +) typically launches a separate, distinct GPU kernel. For acc = acc * x + x, this means one kernel for acc * x (reading acc and x, writing an intermediate result), and another kernel for the + operation (reading the intermediate result and x, writing the new acc). With each iteration of num_ops, this involves multiple reads and writes to global memory for intermediate tensors. This dramatically increases the total memory traffic. Since these operations are generally memory-bound, the runtime increases linearly with num_ops (as more memory traffic is generated), and the arithmetic intensity and achieved FLOP/s remain low and constant because the performance is bottlenecked by the constant back-and-forth movement of data to and from global memory. In essence, fusion transforms a sequence of memory-bound operations into a single, more compute-efficient kernel.
