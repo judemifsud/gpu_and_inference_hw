@@ -22,6 +22,12 @@ GPU_SPECS = {
         "peak_flops": 91.6e12,  # 91.6 TFLOP/s FP32
         "peak_bw": 864e9,  # 864 GB/s GDDR6 bandwidth
     },
+    # Added support for 'NVIDIA RTX PRO 6000 Blackwell Server Edition' (estimated values)
+    "BLACKWELL": {
+        "label": "NVIDIA RTX PRO 6000 Blackwell Server Edition",
+        "peak_flops": 100e12, # Estimated, adjust as needed
+        "peak_bw": 4e12,      # Estimated, adjust as needed
+    }
 }
 
 
