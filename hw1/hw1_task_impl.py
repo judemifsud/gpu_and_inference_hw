@@ -37,10 +37,12 @@ def make_compute_fn(num_ops: int, compiled: bool = True):
     """Return an eager or compiled function whose work scales with num_ops."""
 
     def fn(x: torch.Tensor) -> torch.Tensor:
-        pass
+        acc = x
+        for _ in range(num_ops):
+            acc = acc * x + x
+        return acc
 
-    # TODO (1 line): return either `fn` or `torch.compile(fn)` based on `compiled`
-    pass
+    return torch.compile(fn) if compiled else fn
 
 
 # ============================================================================
@@ -96,8 +98,22 @@ def benchmark_fn(fn, *args, warmup=25, rep=100) -> float:
 
 
 def compute_elementwise_metrics(num_elements, num_ops, bytes_per_element, ms, variant):
-    # TODO: compute total FLOPs, arithmetic intensity, and achieved FLOP/s
-    pass
+    # Each `acc = acc * x + x` iteration does two FLOPs per element.
+    total_flops = 2 * num_ops * num_elements
+
+    if variant == "compiled":
+        # Fused kernel reads each input element once and writes each output once.
+        total_bytes = num_elements * 2 * bytes_per_element
+    elif variant == "eager":
+        # Eager mode launches a separate multiply and add per iteration.
+        # Multiply reads `acc` and `x`, writes an intermediate tensor.
+        # Add reads the intermediate tensor and `x`, then writes `acc`.
+        total_bytes = num_elements * 6 * bytes_per_element * num_ops
+    else:
+        raise ValueError(f"Unknown variant: {variant}")
+
+    ai = total_flops / total_bytes
+    achieved_flops = total_flops / (ms * 1e-3)
     return total_flops, ai, achieved_flops
 
 
